@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 from toss_auto_trader.config import Settings
 from toss_auto_trader import breadth_shadow
+from toss_auto_trader import decision_journal
 from toss_auto_trader import paper_reentry_watch
 from toss_auto_trader import simple_gap_state
 from toss_auto_trader.discord_notify import MonitorExitAlert, format_monitor_exit_alert, send_discord_message
@@ -1055,10 +1056,57 @@ def candidate_entry_audit_fields(target: dict) -> dict:
         "first_minute_return_pct": target.get("first_minute_return_pct"),
         "first_minute_volume": target.get("open_volume"),
         "gap_pct": target.get("gap_pct"),
+        "previous_volume_ratio": target.get("prev_vol_ratio"),
         "last_price_at_scan": target.get("last_price"),
         "observed_buy_quote": target.get("observed_buy_quote"),
         "buy_quote_drift_pct": target.get("buy_quote_drift_pct"),
     }
+
+
+def candidate_decision_audit_fields(target: dict, *, trade_date: str, candidate_count: int) -> dict:
+    candidate_rank = int(target.get("candidate_rank") or 0)
+    return {
+        "candidate_rank": candidate_rank,
+        **candidate_entry_audit_fields(target),
+        "pretrade_memo": decision_journal.build_pretrade_memo(
+            strategy_name=STRATEGY_NAME,
+            trade_date=trade_date,
+            symbol=str(target["symbol"]),
+            candidate_rank=candidate_rank,
+            candidate_count=candidate_count,
+            open_price=float(target["open_price"]),
+            previous_close=float(target["prev_close"]),
+            gap_pct=float(target["gap_pct"]),
+            previous_volume_ratio=float(target["prev_vol_ratio"]),
+            max_position_krw=MAX_BUY_AMOUNT_KRW,
+            stop_loss_pct=STOP_LOSS_PCT,
+            take_profit_pct=TAKE_PROFIT_PCT,
+        ),
+    }
+
+
+def record_unselected_lower_rank_candidates(
+    triggered: list[dict],
+    *,
+    selected_target: dict,
+    trade_date: str,
+) -> None:
+    selected_rank = int(selected_target["candidate_rank"])
+    candidate_count = len(triggered)
+    for target in triggered:
+        if int(target["candidate_rank"]) <= selected_rank:
+            continue
+        append_entry_price_audit({
+            "trade_date": trade_date,
+            "symbol": target["symbol"],
+            **candidate_decision_audit_fields(target, trade_date=trade_date, candidate_count=candidate_count),
+            "decision": "not_selected_lower_rank",
+            "selected_symbol": selected_target["symbol"],
+            "selected_candidate_rank": selected_rank,
+            "execution_checks_complete": False,
+            "counterfactual_scope": "screening_quality_not_executable_fill",
+            "order_sent": False,
+        })
 
 
 def load_strategy_state() -> dict | None:
@@ -1684,6 +1732,7 @@ def run_buy(
                         'daily_open_price': entry_snapshot.daily_open_price,
                         'previous_close_basis_diff_pct': basis_diff_pct,
                         'gap_pct': gap * 100.0,
+                        'prev_vol_ratio': prev_vol_ratio,
                     })
                 else:
                     append_entry_price_audit({**audit_record, "gap_pct": gap * 100.0, "decision": "excluded_gap_threshold"})
@@ -1752,13 +1801,15 @@ def run_buy(
     orders_to_send = []
     for candidate_rank, target in enumerate(triggered, 1):
         target['candidate_rank'] = candidate_rank
+    candidate_count = len(triggered)
+    for target in triggered:
+        candidate_rank = target['candidate_rank']
         warnings = blocking_warnings_for_symbol(client, target['symbol'])
         if warnings:
             append_entry_price_audit({
                 "trade_date": trade_date,
                 "symbol": target['symbol'],
-                "candidate_rank": candidate_rank,
-                **candidate_entry_audit_fields(target),
+                **candidate_decision_audit_fields(target, trade_date=trade_date, candidate_count=candidate_count),
                 "decision": "excluded_warning",
                 "warnings": warnings,
             })
@@ -1772,8 +1823,7 @@ def run_buy(
             append_entry_price_audit({
                 "trade_date": trade_date,
                 "symbol": target['symbol'],
-                "candidate_rank": candidate_rank,
-                **candidate_entry_audit_fields(target),
+                **candidate_decision_audit_fields(target, trade_date=trade_date, candidate_count=candidate_count),
                 "decision": "excluded_quote_drift",
             })
             continue
@@ -1781,8 +1831,7 @@ def run_buy(
             append_entry_price_audit({
                 "trade_date": trade_date,
                 "symbol": target['symbol'],
-                "candidate_rank": candidate_rank,
-                **candidate_entry_audit_fields(target),
+                **candidate_decision_audit_fields(target, trade_date=trade_date, candidate_count=candidate_count),
                 "limit_price": limit_price,
                 "decision": "excluded_budget",
             })
@@ -1797,15 +1846,23 @@ def run_buy(
             append_entry_price_audit({
                 "trade_date": trade_date,
                 "symbol": target['symbol'],
-                "candidate_rank": candidate_rank,
-                **candidate_entry_audit_fields(target),
+                **candidate_decision_audit_fields(target, trade_date=trade_date, candidate_count=candidate_count),
                 "limit_price": limit_price,
                 "quantity": qty,
                 "allocated_amount": cost,
                 "decision": "selected_for_order",
+                "execution_checks_complete": True,
             })
             orders_to_send.append((target, qty, cost))
             break  # 최상위 1종목만 매수하고 종료
+
+    if orders_to_send:
+        selected_target = orders_to_send[0][0]
+        record_unselected_lower_rank_candidates(
+            triggered,
+            selected_target=selected_target,
+            trade_date=trade_date,
+        )
 
     print(f"\n최종 매수 대상 종목 수: {len(orders_to_send)}개 (남은 예수금: {remaining_budget:,.0f}원)")
 

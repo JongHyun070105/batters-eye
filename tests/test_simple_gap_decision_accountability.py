@@ -129,6 +129,16 @@ class DecisionAccountabilityTests(unittest.TestCase):
         )
         self.assertEqual(len(rows), 3)
 
+    def test_strategy_review_is_attached_to_each_analysis_window(self):
+        config = self.mod.live_config()
+        rows = [self.candidate("ONLY", 1_000, 1_010)]
+        gate = self.mod.GateRow("2026-01-02", 100, 101, 102, -0.02, 103, 104, -0.01)
+
+        result = self.mod.analyze(rows, {"2026-01-02": gate}, config, start="2026-01-01", end="2026-01-31")
+
+        self.assertEqual(result["strategy_review"]["status"], "insufficient_forward_sample")
+        self.assertFalse(result["strategy_review"]["checks"]["minimum_decisions"])
+
 
 if __name__ == "__main__":
     unittest.main()

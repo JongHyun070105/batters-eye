@@ -33,7 +33,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from toss_auto_trader.config import Settings
 from toss_auto_trader import breadth_shadow
+from toss_auto_trader import decision_journal
 from toss_auto_trader import entry_price_audit
+from toss_auto_trader import simple_gap_state
 from toss_auto_trader.toss_client import TossApiError, TossInvestClient
 
 BUY_LOG = ROOT / "logs" / "simple_gap_trader_buy.log"
@@ -42,6 +44,7 @@ SELL_LOG = ROOT / "logs" / "simple_gap_trader_sell.log"
 REPORT_LOG = ROOT / "logs" / "toss_discord_report.log"
 BREADTH_SHADOW_LOG = ROOT / "logs" / "simple_gap_breadth_shadow.jsonl"
 ENTRY_PRICE_AUDIT_LOG = ROOT / "logs" / "simple_gap_entry_price_audit.jsonl"
+DECISION_REVIEW_LOG = ROOT / "logs" / "simple_gap_decision_review.jsonl"
 DB_PATH = ROOT / "data" / "edge_research_universe_15y.sqlite3"
 DEFAULT_TARGET_ENV = "TOSS_DISCORD_TARGET"
 
@@ -1150,6 +1153,34 @@ def candle_update_report(
                 lines.append(f"- 진입가격 불일치 종목: {price_reconciliation['mismatch_symbols'][:10]}")
         except Exception as error:
             lines.append(f"- 진입가격 사후검증 실패: {type(error).__name__}: {error} / 실매매 영향 없음")
+        try:
+            decision_review = decision_journal.review_trade_date(
+                DB_PATH,
+                ENTRY_PRICE_AUDIT_LOG,
+                str(latest_date),
+            )
+            review_status = decision_review["status"]
+            if review_status == "ok":
+                decision_review["recorded_at"] = datetime.now().astimezone().isoformat()
+                simple_gap_state.append_event(DECISION_REVIEW_LOG, decision_review)
+                alpha = decision_review.get("selection_alpha")
+                alpha_label = "비교 후보 없음" if alpha is None else f"{float(alpha) * 100:+.2f}%p"
+                lines.append(
+                    f"- 의사결정 사후평가: 선택 {decision_review.get('selected_symbol') or '없음'} / "
+                    f"탈락 후보 {decision_review['rejected_candidates']}개 / 선택 알파 {alpha_label} / 실주문 없음"
+                )
+                rolling = decision_journal.rolling_strategy_review(DECISION_REVIEW_LOG)
+                lines.append(
+                    f"- 최근 결정 전략검토: {rolling['status']} / "
+                    f"표본 {rolling['reviewed_decisions']}/{rolling['policy']['minimum_decisions']} / "
+                    "자동 증액·실전 승인 아님"
+                )
+            elif review_status == "no_accountability_decisions":
+                lines.append("- 의사결정 사후평가: 오늘 선택/탈락 후보 없음")
+            else:
+                lines.append(f"- 의사결정 사후평가 실패: {review_status} / 실매매 영향 없음")
+        except Exception as error:
+            lines.append(f"- 의사결정 사후평가 실패: {type(error).__name__}: {error} / 실매매 영향 없음")
         try:
             reconciliation = breadth_shadow.record_official_reconciliation(
                 DB_PATH, BREADTH_SHADOW_LOG, str(latest_date)

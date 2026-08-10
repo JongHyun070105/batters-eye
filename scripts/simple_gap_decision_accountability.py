@@ -29,6 +29,7 @@ from simple_gap_variant_core import (
     simulate_day,
 )
 from simple_gap_variant_data import load_candidates
+from toss_auto_trader import decision_journal
 
 MIN_COMPARABLE_GAP = -0.31
 
@@ -247,13 +248,22 @@ def analyze(
 ) -> dict[str, object]:
     scoped = [row for row in rows if start <= row.date <= end and row.date in gates]
     decisions, selected, rejected = decision_days(scoped, config)
+    selection = selection_summary(decisions, selected, rejected, capital=config.capital)
+    selected_summary = selection["selected"]
+    assert isinstance(selected_summary, Mapping)
     return {
         "start": start,
         "end": end,
         "candidate_rows": len(scoped),
-        "selection": selection_summary(decisions, selected, rejected, capital=config.capital),
+        "selection": selection,
         "rank_comparison": rank_comparison(scoped, config),
         "kosdaq_benchmark": market_benchmark(decisions, gates),
+        "strategy_review": decision_journal.evaluate_strategy_metrics(
+            decisions=int(selection["decision_days"]),
+            average_selection_alpha=selection["avg_selection_alpha"],
+            profit_factor=selected_summary["profit_factor"],
+            max_drawdown=selection["selected_fixed_capital_max_drawdown"],
+        ),
     }
 
 
@@ -279,7 +289,8 @@ def markdown(payload: Mapping[str, object]) -> str:
         selection = item["selection"]
         benchmark = item["kosdaq_benchmark"]
         ranks = item["rank_comparison"]
-        assert isinstance(selection, Mapping) and isinstance(benchmark, Mapping) and isinstance(ranks, Mapping)
+        review = item["strategy_review"]
+        assert isinstance(selection, Mapping) and isinstance(benchmark, Mapping) and isinstance(ranks, Mapping) and isinstance(review, Mapping)
         selected = selection["selected"]
         rejected = selection["rejected_counterfactuals"]
         assert isinstance(selected, Mapping) and isinstance(rejected, Mapping)
@@ -292,6 +303,7 @@ def markdown(payload: Mapping[str, object]) -> str:
             f"- selection alpha vs rejected mean: {pct(selection['avg_selection_alpha'])} / beat rate {pct(selection['selected_beats_rejected_mean_rate'])}",
             f"- selected was hindsight-best: {pct(selection['selected_was_best_rate'])} / average oracle regret {pct(selection['avg_oracle_regret'])}",
             f"- selected losses: {selection['selected_losses']} / rejected winners disclosed: {selection['rejected_winners']}",
+            f"- pre-registered strategy review: `{review['status']}`",
             f"- KOSDAQ first-to-last active-date buy-and-hold: {pct(benchmark['full_period_return'])}",
             f"- KOSDAQ strategy-active-day open-to-close path: {pct(benchmark['compounded_open_to_close'])} / MDD {pct(benchmark['max_drawdown'])}",
             "",

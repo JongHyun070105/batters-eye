@@ -1,6 +1,6 @@
 # Simple Gap Decision Accountability Audit
 
-- generated_at: `2026-08-10T19:46:58.093788+09:00`
+- generated_at: `2026-08-10T20:02:33.656877+09:00`
 - order_sent: `false`
 - live_order_allowed: `false`
 - principle: compare the selected candidate and every rejected eligible candidate under identical exit and cost assumptions.
@@ -14,6 +14,7 @@
 - selection alpha vs rejected mean: +1.32% / beat rate +56.68%
 - selected was hindsight-best: +32.26% / average oracle regret +3.00%
 - selected losses: 109 / rejected winners disclosed: 2071
+- pre-registered strategy review: `continue_under_existing_risk_limits`
 - KOSDAQ first-to-last active-date buy-and-hold: +8.12%
 - KOSDAQ strategy-active-day open-to-close path: -67.64% / MDD +72.59%
 
@@ -33,6 +34,7 @@
 - selection alpha vs rejected mean: +1.03% / beat rate +57.24%
 - selected was hindsight-best: +31.58% / average oracle regret +2.93%
 - selected losses: 81 / rejected winners disclosed: 1544
+- pre-registered strategy review: `continue_under_existing_risk_limits`
 - KOSDAQ first-to-last active-date buy-and-hold: +16.33%
 - KOSDAQ strategy-active-day open-to-close path: -42.90% / MDD +49.26%
 
@@ -52,6 +54,7 @@
 - selection alpha vs rejected mean: +2.01% / beat rate +55.38%
 - selected was hindsight-best: +33.85% / average oracle regret +3.18%
 - selected losses: 28 / rejected winners disclosed: 527
+- pre-registered strategy review: `continue_under_existing_risk_limits`
 - KOSDAQ first-to-last active-date buy-and-hold: -13.70%
 - KOSDAQ strategy-active-day open-to-close path: -43.33% / MDD +49.18%
 
@@ -71,6 +74,7 @@
 - selection alpha vs rejected mean: +2.52% / beat rate +59.62%
 - selected was hindsight-best: +36.54% / average oracle regret +3.10%
 - selected losses: 17 / rejected winners disclosed: 447
+- pre-registered strategy review: `continue_under_existing_risk_limits`
 - KOSDAQ first-to-last active-date buy-and-hold: +0.21%
 - KOSDAQ strategy-active-day open-to-close path: -40.66% / MDD +45.05%
 
